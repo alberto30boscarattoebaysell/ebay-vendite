@@ -1,0 +1,30 @@
+name: Collega eBay
+
+on:
+  workflow_dispatch:
+    inputs:
+      auth_url:
+        description: "Lascia vuoto per avere il link. Poi incolla qui l'URL della pagina finale di eBay"
+        required: false
+        default: ""
+
+jobs:
+  collega:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Collega account eBay
+        env:
+          AUTH_URL: ${{ inputs.auth_url }}
+          EBAY_CLIENT_ID: ${{ vars.EBAY_CLIENT_ID }}
+          EBAY_RUNAME: ${{ vars.EBAY_RUNAME }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: python scripts/collega_ebay.py
