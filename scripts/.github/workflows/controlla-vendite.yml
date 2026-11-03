@@ -1,0 +1,65 @@
+name: Controlla vendite eBay
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # ogni 5 minuti (GitHub a volte ritarda di qualche minuto)
+  workflow_dispatch:         # permette anche di lanciarlo a mano
+
+# Evita che due controlli girino insieme
+concurrency:
+  group: controlla-vendite
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # serve solo per il "keepalive" qui sotto
+
+jobs:
+  controlla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Recupera l'elenco degli ordini già notificati dal controllo precedente
+      - uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: stato-vendite-${{ github.run_id }}
+          restore-keys: stato-vendite-
+
+      - name: Controlla nuove vendite
+        env:
+          TZ: Europe/Rome
+          STATE_FILE: state/seen_orders.json
+          EBAY_CLIENT_ID: ${{ vars.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+          EBAY_REFRESH_TOKEN: ${{ secrets.EBAY_REFRESH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python ebay_notifier.py --once
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state
+          key: stato-vendite-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # GitHub sospende i workflow programmati dopo 60 giorni senza modifiche al repo.
+      # Ogni ~45 giorni facciamo un commit vuoto per tenerlo attivo.
+      - name: Keepalive
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          if [ $(( (now - last) / 86400 )) -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive"
+            git push
+          fi
